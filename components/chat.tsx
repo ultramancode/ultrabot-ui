@@ -77,6 +77,17 @@ export function Chat({
 
     setStatus('streaming');
     
+    // 로딩 메시지 추가
+    const loadingMessage: UIMessage = {
+      id: generateUUID(),
+      role: 'assistant',
+      content: '...',
+      parts: [{ type: 'text', text: '생각 중...' }],
+      createdAt: new Date(),
+    };
+    
+    setMessages(prev => [...prev, loadingMessage]);
+    
     try {
       const response = await fetch('http://localhost:8000/chat', {
         method: 'POST',
@@ -94,21 +105,41 @@ export function Chat({
 
       const data = await response.json();
       
-      // 응답 메시지 추가 (백엔드에서 response 필드로 응답)
+      // 로딩 메시지를 실제 응답으로 교체
       const assistantMessage: UIMessage = {
-        id: generateUUID(),
+        id: loadingMessage.id, // 같은 ID 사용해서 교체
         role: 'assistant',
         content: data.response || '',
         parts: [{ type: 'text', text: data.response || '' }],
         createdAt: new Date(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === loadingMessage.id ? assistantMessage : msg
+        )
+      );
       mutate(unstable_serialize(getChatHistoryPaginationKey));
       
     } catch (error: any) {
       console.error('Error sending message:', error);
       setStatus('error');
+      
+      // 로딩 메시지를 에러 메시지로 교체
+      const errorMessage: UIMessage = {
+        id: loadingMessage.id,
+        role: 'assistant',
+        content: '죄송합니다. 오류가 발생했습니다.',
+        parts: [{ type: 'text', text: '죄송합니다. 오류가 발생했습니다.' }],
+        createdAt: new Date(),
+      };
+      
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === loadingMessage.id ? errorMessage : msg
+        )
+      );
+      
       toast({
         type: 'error',
         description: error.message || 'Failed to send message',
