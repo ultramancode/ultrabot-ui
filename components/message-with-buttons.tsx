@@ -20,9 +20,9 @@ export function MessageWithButtons({ content, buttons, onButtonClick }: MessageW
     <div className="space-y-3">
       <div className="text-sm">{content}</div>
       <div className="flex gap-2">
-        {buttons.map((button, index) => (
+        {buttons.map((button) => (
           <Button
-            key={index}
+            key={button.value}
             variant={button.value === 'yes' ? 'default' : 'outline'}
             size="sm"
             onClick={() => onButtonClick(button.value, content)}

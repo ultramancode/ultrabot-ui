@@ -2,10 +2,9 @@
 
 import type { Attachment, UIMessage } from 'ai';
 import { useEffect, useState } from 'react';
-import useSWR, { useSWRConfig } from 'swr';
+import { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
-import type { Vote } from '@/lib/db/schema';
-import { fetcher, generateUUID } from '@/lib/utils';
+import { generateUUID } from '@/lib/utils';
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
@@ -198,7 +197,7 @@ export function Chat({
   };
 
   const handleSubmit = async (event?: { preventDefault?: () => void }) => {
-    if (event && event.preventDefault) {
+    if (event?.preventDefault) {
       event.preventDefault();
     }
     
@@ -286,9 +285,10 @@ export function Chat({
               <div className="text-sm text-muted-foreground">확인이 필요합니다:</div>
               <div className="text-sm">{pendingButtonMessage.message}</div>
               <div className="flex gap-2">
-                {pendingButtonMessage.buttons.map((button: any, index: number) => (
+                {pendingButtonMessage.buttons.map((button: any) => (
                   <button
-                    key={index}
+                    key={button.value}
+                    type="button"
                     onClick={() => handleButtonClick(button.value)}
                     className={`px-4 py-2 text-sm rounded-md ${
                       button.value === 'yes' 
