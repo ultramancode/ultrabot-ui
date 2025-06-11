@@ -17,6 +17,8 @@ import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
 export function Chat({
   id,
   initialMessages,
@@ -92,12 +94,16 @@ export function Chat({
     }
     
     try {
-      const requestBody: any = { message: messageContent };
+      const requestBody: any = { 
+        message: messageContent,
+        chat_id: id,
+        user_id: session?.user?.id || "guest"
+      };
       if (actionResponse) {
         requestBody.action_response = actionResponse;
       }
 
-      const response = await fetch('http://localhost:8000/chat', {
+      const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
