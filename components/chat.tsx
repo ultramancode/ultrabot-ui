@@ -40,6 +40,7 @@ export function Chat({
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'ready' | 'submitted' | 'streaming' | 'error'>('ready');
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+  const [pendingButtonMessage, setPendingButtonMessage] = useState<{message: string, buttons: any[]} | null>(null);
 
   const { visibilityType } = useChatVisibility({
     chatId: id,
@@ -72,31 +73,37 @@ export function Chat({
 
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 
-  const handleSendMessage = async (messageContent: string) => {
-    if (!messageContent.trim()) return;
+  const handleSendMessage = async (messageContent: string, actionResponse?: string) => {
+    if (!messageContent.trim() && !actionResponse) return;
 
     setStatus('streaming');
     
-    // 로딩 메시지 추가
-    const loadingMessage: UIMessage = {
-      id: generateUUID(),
-      role: 'assistant',
-      content: '...',
-      parts: [{ type: 'text', text: '생각 중...' }],
-      createdAt: new Date(),
-    };
-    
-    setMessages(prev => [...prev, loadingMessage]);
+    // 로딩 메시지 추가 (버튼 클릭이 아닌 경우에만)
+    let loadingMessageId: string | null = null;
+    if (!actionResponse) {
+      const loadingMessage: UIMessage = {
+        id: generateUUID(),
+        role: 'assistant',
+        content: '생각 중...',
+        parts: [{ type: 'text', text: '생각 중...' }],
+        createdAt: new Date(),
+      };
+      loadingMessageId = loadingMessage.id;
+      setMessages(prev => [...prev, loadingMessage]);
+    }
     
     try {
+      const requestBody: any = { message: messageContent };
+      if (actionResponse) {
+        requestBody.action_response = actionResponse;
+      }
+
       const response = await fetch('http://localhost:8000/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          message: messageContent,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -105,40 +112,59 @@ export function Chat({
 
       const data = await response.json();
       
-      // 로딩 메시지를 실제 응답으로 교체
+      // 응답 메시지 생성
       const assistantMessage: UIMessage = {
-        id: loadingMessage.id, // 같은 ID 사용해서 교체
+        id: loadingMessageId || generateUUID(),
         role: 'assistant',
         content: data.response || '',
         parts: [{ type: 'text', text: data.response || '' }],
         createdAt: new Date(),
       };
 
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === loadingMessage.id ? assistantMessage : msg
-        )
-      );
+      // 버튼이 있는 경우 상태에 저장
+      if (data.buttons && data.buttons.length > 0) {
+        setPendingButtonMessage({
+          message: data.response,
+          buttons: data.buttons
+        });
+      } else {
+        setPendingButtonMessage(null);
+      }
+
+      if (loadingMessageId) {
+        // 로딩 메시지를 실제 응답으로 교체
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === loadingMessageId ? assistantMessage : msg
+          )
+        );
+      } else {
+        // 버튼 클릭 응답인 경우 새 메시지 추가
+        setMessages(prev => [...prev, assistantMessage]);
+      }
+      
       mutate(unstable_serialize(getChatHistoryPaginationKey));
       
     } catch (error: any) {
       console.error('Error sending message:', error);
       setStatus('error');
       
-      // 로딩 메시지를 에러 메시지로 교체
-      const errorMessage: UIMessage = {
-        id: loadingMessage.id,
-        role: 'assistant',
-        content: '죄송합니다. 오류가 발생했습니다.',
-        parts: [{ type: 'text', text: '죄송합니다. 오류가 발생했습니다.' }],
-        createdAt: new Date(),
-      };
-      
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === loadingMessage.id ? errorMessage : msg
-        )
-      );
+      if (loadingMessageId) {
+        // 로딩 메시지를 에러 메시지로 교체
+        const errorMessage: UIMessage = {
+          id: loadingMessageId,
+          role: 'assistant',
+          content: '죄송합니다. 오류가 발생했습니다.',
+          parts: [{ type: 'text', text: '죄송합니다. 오류가 발생했습니다.' }],
+          createdAt: new Date(),
+        };
+        
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === loadingMessageId ? errorMessage : msg
+          )
+        );
+      }
       
       toast({
         type: 'error',
@@ -149,6 +175,26 @@ export function Chat({
         setStatus('ready');
       }
     }
+  };
+
+  // 버튼 클릭 핸들러
+  const handleButtonClick = async (buttonValue: string) => {
+    if (!pendingButtonMessage) return;
+
+    // 사용자가 버튼을 클릭했다는 메시지 추가
+    const userMessage: UIMessage = {
+      id: generateUUID(),
+      role: 'user',
+      content: buttonValue === 'yes' ? '예' : '아니오',
+      parts: [{ type: 'text', text: buttonValue === 'yes' ? '예' : '아니오' }],
+      createdAt: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    
+    // 백엔드에 버튼 응답 전송
+    await handleSendMessage(pendingButtonMessage.message, buttonValue);
+    setPendingButtonMessage(null);
   };
 
   const handleSubmit = async (event?: { preventDefault?: () => void }) => {
@@ -232,6 +278,31 @@ export function Chat({
           isReadonly={isReadonly}
           isArtifactVisible={isArtifactVisible}
         />
+
+        {/* 확인 버튼 렌더링, if문 마냥 pendigButtonMessage가 null 아닐 때만 렌더링 */}
+        {pendingButtonMessage && (
+          <div className="mx-auto px-4 pb-4 w-full md:max-w-3xl">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+              <div className="text-sm text-muted-foreground">확인이 필요합니다:</div>
+              <div className="text-sm">{pendingButtonMessage.message}</div>
+              <div className="flex gap-2">
+                {pendingButtonMessage.buttons.map((button: any, index: number) => (
+                  <button
+                    key={index}
+                    onClick={() => handleButtonClick(button.value)}
+                    className={`px-4 py-2 text-sm rounded-md ${
+                      button.value === 'yes' 
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
+                        : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                    }`}
+                  >
+                    {button.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl" onSubmit={handleSubmit}>
           {!isReadonly && (
