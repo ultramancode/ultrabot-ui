@@ -1,12 +1,11 @@
 'use client';
 
 import type { Attachment, UIMessage } from 'ai';
-import { useChat } from '@ai-sdk/react';
 import { useEffect, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
-import { fetcher, fetchWithErrorHandlers, generateUUID } from '@/lib/utils';
+import { fetcher, generateUUID } from '@/lib/utils';
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
@@ -18,9 +17,6 @@ import { toast } from './toast';
 import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
-import { useAutoResume } from '@/hooks/use-auto-resume';
-import { ChatSDKError } from '@/lib/errors';
-import { ChatRequestOptions } from 'ai';
 
 export function Chat({
   id,
@@ -40,110 +36,147 @@ export function Chat({
   autoResume: boolean;
 }) {
   const { mutate } = useSWRConfig();
+  const [messages, setMessages] = useState<Array<UIMessage>>(initialMessages);
+  const [input, setInput] = useState('');
+  const [status, setStatus] = useState<'ready' | 'submitted' | 'streaming' | 'error'>('ready');
+  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
 
   const { visibilityType } = useChatVisibility({
     chatId: id,
     initialVisibilityType,
   });
 
-  const {
-    messages,
-    setMessages,
-    input,
-    setInput,
-    append,
-    status,
-    stop,
-    reload,
-    experimental_resume,
-    data,
-  } = useChat({
-    id,
-    initialMessages,
-    experimental_throttle: 100,
-    sendExtraMessageFields: true,
-    generateId: generateUUID,
-    fetch: fetchWithErrorHandlers,
-    experimental_prepareRequestBody: (body) => ({
-      id,
-      message: body.messages.at(-1),
-      selectedChatModel: initialChatModel,
-      selectedVisibilityType: visibilityType,
-    }),
-    onFinish: () => {
-      mutate(unstable_serialize(getChatHistoryPaginationKey));
-    },
-    onError: (error) => {
-      if (error instanceof ChatSDKError) {
-        toast({
-          type: 'error',
-          description: error.message,
-        });
-      }
-    },
-  });
-
   const searchParams = useSearchParams();
   const query = searchParams.get('query');
-
   const [hasAppendedQuery, setHasAppendedQuery] = useState(false);
 
   useEffect(() => {
     if (query && !hasAppendedQuery) {
-      append({
+      const queryMessage: UIMessage = {
+        id: generateUUID(),
         role: 'user',
         content: query,
-      });
-
+        parts: [{ type: 'text', text: query }],
+        createdAt: new Date(),
+      };
+      
+      setMessages(prev => [...prev, queryMessage]);
+      handleSendMessage(query);
       setHasAppendedQuery(true);
       window.history.replaceState({}, '', `/chat/${id}`);
     }
-  }, [query, append, hasAppendedQuery, id]);
+  }, [query, hasAppendedQuery, id]);
 
-  const { data: votes } = useSWR<Array<Vote>>(
-    messages.length >= 2 ? `/api/vote?chatId=${id}` : null,
-    fetcher,
-  );
+  // 투표 기능 비활성화 (현재는 백엔드에 vote API가 없음 -> 추가 후 활용)
+  const votes = undefined;
 
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 
-  useAutoResume({
-    autoResume,
-    initialMessages,
-    experimental_resume,
-    data,
-    setMessages,
-  });
+  const handleSendMessage = async (messageContent: string) => {
+    if (!messageContent.trim()) return;
 
-  const handleSubmit = async (event?: { preventDefault?: () => void }, chatRequestOptions?: ChatRequestOptions) => {
-    if (event && event.preventDefault) {
-      event.preventDefault();
-    }
-    if (!input.trim()) return;
-
+    setStatus('streaming');
+    
     try {
       const response = await fetch('http://localhost:8000/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: input, ...chatRequestOptions }),
+        body: JSON.stringify({ 
+          message: messageContent,
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send message');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
-      setMessages((prevMessages) => [...prevMessages, data]);
-      setInput('');
+      
+      // 응답 메시지 추가 (백엔드에서 response 필드로 응답)
+      const assistantMessage: UIMessage = {
+        id: generateUUID(),
+        role: 'assistant',
+        content: data.response || '',
+        parts: [{ type: 'text', text: data.response || '' }],
+        createdAt: new Date(),
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+      mutate(unstable_serialize(getChatHistoryPaginationKey));
+      
     } catch (error: any) {
       console.error('Error sending message:', error);
+      setStatus('error');
       toast({
         type: 'error',
-        description: error.message,
+        description: error.message || 'Failed to send message',
       });
+    } finally {
+      if (status !== 'error') {
+        setStatus('ready');
+      }
+    }
+  };
+
+  const handleSubmit = async (event?: { preventDefault?: () => void }) => {
+    if (event && event.preventDefault) {
+      event.preventDefault();
+    }
+    
+    if (!input.trim() || status !== 'ready') return;
+
+    const userMessage: UIMessage = {
+      id: generateUUID(),
+      role: 'user',
+      content: input,
+      parts: [{ type: 'text', text: input }],
+      createdAt: new Date(),
+      experimental_attachments: attachments,
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
+    setInput('');
+    setAttachments([]);
+    
+    await handleSendMessage(currentInput);
+  };
+
+  const append = async (message: any): Promise<string | null | undefined> => {
+    const userMessage: UIMessage = {
+      id: generateUUID(),
+      role: 'user',
+      content: message.content,
+      parts: [{ type: 'text', text: message.content }],
+      createdAt: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    await handleSendMessage(message.content);
+    return null;
+  };
+
+  const stop = async (): Promise<void> => {
+    setStatus('ready');
+  };
+
+  const reload = async (): Promise<string | null | undefined> => {
+    // 마지막 사용자 메시지를 다시 보내기
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    if (lastUserMessage) {
+      await handleSendMessage(lastUserMessage.content);
+    }
+    return null;
+  };
+
+  // setMessages를 Message[] 타입과 호환되게 만드는 래퍼
+  const wrappedSetMessages = (messagesOrUpdater: any) => {
+    if (typeof messagesOrUpdater === 'function') {
+      setMessages(messagesOrUpdater);
+    } else {
+      setMessages(messagesOrUpdater);
     }
   };
 
@@ -163,7 +196,7 @@ export function Chat({
           status={status}
           votes={votes}
           messages={messages}
-          setMessages={setMessages}
+          setMessages={wrappedSetMessages}
           reload={reload}
           isReadonly={isReadonly}
           isArtifactVisible={isArtifactVisible}
@@ -181,7 +214,7 @@ export function Chat({
               attachments={attachments}
               setAttachments={setAttachments}
               messages={messages}
-              setMessages={setMessages}
+              setMessages={wrappedSetMessages}
               append={append}
               selectedVisibilityType={visibilityType}
             />
@@ -200,7 +233,7 @@ export function Chat({
         setAttachments={setAttachments}
         append={append}
         messages={messages}
-        setMessages={setMessages}
+        setMessages={wrappedSetMessages}
         reload={reload}
         votes={votes}
         isReadonly={isReadonly}
