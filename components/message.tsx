@@ -221,7 +221,7 @@ const PurePreviewMessage = ({
               }
             })}
 
-            {!isReadonly && (
+            {!isReadonly && vote !== undefined && (
               <MessageActions
                 key={`action-${message.id}`}
                 chatId={chatId}
