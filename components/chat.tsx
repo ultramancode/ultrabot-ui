@@ -20,6 +20,7 @@ import { useSearchParams } from 'next/navigation';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { useAutoResume } from '@/hooks/use-auto-resume';
 import { ChatSDKError } from '@/lib/errors';
+import { ChatRequestOptions } from 'ai';
 
 export function Chat({
   id,
@@ -48,7 +49,6 @@ export function Chat({
   const {
     messages,
     setMessages,
-    handleSubmit,
     input,
     setInput,
     append,
@@ -116,6 +116,37 @@ export function Chat({
     setMessages,
   });
 
+  const handleSubmit = async (event?: { preventDefault?: () => void }, chatRequestOptions?: ChatRequestOptions) => {
+    if (event && event.preventDefault) {
+      event.preventDefault();
+    }
+    if (!input.trim()) return;
+
+    try {
+      const response = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: input, ...chatRequestOptions }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
+      const data = await response.json();
+      setMessages((prevMessages) => [...prevMessages, data]);
+      setInput('');
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      toast({
+        type: 'error',
+        description: error.message,
+      });
+    }
+  };
+
   return (
     <>
       <div className="flex flex-col min-w-0 h-dvh bg-background">
@@ -138,7 +169,7 @@ export function Chat({
           isArtifactVisible={isArtifactVisible}
         />
 
-        <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
+        <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl" onSubmit={handleSubmit}>
           {!isReadonly && (
             <MultimodalInput
               chatId={id}
