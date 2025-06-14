@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useMemo, useOptimistic, useState } from 'react';
+import { startTransition, useMemo, useOptimistic, useState, useEffect } from 'react';
 
 import { saveChatModelAsCookie } from '@/app/(chat)/actions';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { chatModels } from '@/lib/ai/models';
+import { fetchAvailableModels, type ChatModel } from '@/lib/ai/models';
 import { cn } from '@/lib/utils';
 
 import { CheckCircleFillIcon, ChevronDownIcon } from './icons';
-import { entitlementsByUserType } from '@/lib/ai/entitlements';
 import type { Session } from 'next-auth';
 
 export function ModelSelector({
@@ -26,23 +25,38 @@ export function ModelSelector({
   selectedModelId: string;
 } & React.ComponentProps<typeof Button>) {
   const [open, setOpen] = useState(false);
-  const [optimisticModelId, setOptimisticModelId] =
-    useOptimistic(selectedModelId);
+  const [optimisticModelId, setOptimisticModelId] = useOptimistic(selectedModelId);
+  const [availableModels, setAvailableModels] = useState<ChatModel[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const userType = session.user.type;
-  const { availableChatModelIds } = entitlementsByUserType[userType];
+  // 백엔드에서 모델 목록 가져오기
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const models = await fetchAvailableModels();
+        setAvailableModels(models);
+      } catch (error) {
+        console.error('Failed to load models:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const availableChatModels = chatModels.filter((chatModel) =>
-    availableChatModelIds.includes(chatModel.id),
-  );
+    loadModels();
+  }, []);
 
   const selectedChatModel = useMemo(
-    () =>
-      availableChatModels.find(
-        (chatModel) => chatModel.id === optimisticModelId,
-      ),
-    [optimisticModelId, availableChatModels],
+    () => availableModels.find((model) => model.id === optimisticModelId),
+    [optimisticModelId, availableModels],
   );
+
+  if (loading) {
+    return (
+      <Button variant="outline" className="md:px-2 md:h-[34px]" disabled>
+        Loading...
+      </Button>
+    );
+  }
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -58,12 +72,12 @@ export function ModelSelector({
           variant="outline"
           className="md:px-2 md:h-[34px]"
         >
-          {selectedChatModel?.name}
+          {selectedChatModel?.name || 'Select Model'}
           <ChevronDownIcon />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[300px]">
-        {availableChatModels.map((chatModel) => {
+        {availableModels.map((chatModel) => {
           const { id } = chatModel;
 
           return (

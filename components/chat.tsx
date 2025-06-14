@@ -92,7 +92,8 @@ export function Chat({
       const requestBody: any = { 
         message: messageContent,
         chat_id: id,
-        user_id: session?.user?.id || "guest"
+        user_id: session?.user?.id || "guest",
+        selected_model: initialChatModel  // 선택된 모델 전달
       };
       if (actionResponse) {
         requestBody.action_response = actionResponse;
