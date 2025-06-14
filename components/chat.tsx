@@ -8,14 +8,15 @@ import { generateUUID } from '@/lib/utils';
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
-import type { VisibilityType } from './visibility-selector';
 import { useArtifactSelector } from '@/hooks/use-artifact';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
 import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
-import { useChatVisibility } from '@/hooks/use-chat-visibility';
+
+// 임시 타입 정의 (visibility 기능 제거 중)
+type VisibilityType = 'private' | 'public';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
@@ -23,7 +24,6 @@ export function Chat({
   id,
   initialMessages,
   initialChatModel,
-  initialVisibilityType,
   isReadonly,
   session,
   autoResume,
@@ -31,7 +31,6 @@ export function Chat({
   id: string;
   initialMessages: Array<UIMessage>;
   initialChatModel: string;
-  initialVisibilityType: VisibilityType;
   isReadonly: boolean;
   session: Session;
   autoResume: boolean;
@@ -43,10 +42,6 @@ export function Chat({
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
   const [pendingButtonMessage, setPendingButtonMessage] = useState<{message: string, buttons: any[]} | null>(null);
 
-  const { visibilityType } = useChatVisibility({
-    chatId: id,
-    initialVisibilityType,
-  });
 
   const searchParams = useSearchParams();
   const query = searchParams.get('query');
@@ -268,7 +263,6 @@ export function Chat({
         <ChatHeader
           chatId={id}
           selectedModelId={initialChatModel}
-          selectedVisibilityType={initialVisibilityType}
           isReadonly={isReadonly}
           session={session}
         />
@@ -324,7 +318,7 @@ export function Chat({
               messages={messages}
               setMessages={wrappedSetMessages}
               append={append}
-              selectedVisibilityType={visibilityType}
+              selectedVisibilityType={'private' as VisibilityType}
             />
           )}
         </form>
@@ -345,7 +339,7 @@ export function Chat({
         reload={reload}
         votes={votes}
         isReadonly={isReadonly}
-        selectedVisibilityType={visibilityType}
+        selectedVisibilityType={'private' as VisibilityType}
       />
     </>
   );

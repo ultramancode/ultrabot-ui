@@ -24,7 +24,6 @@ import {
   TrashIcon,
 } from './icons';
 import { memo } from 'react';
-import { useChatVisibility } from '@/hooks/use-chat-visibility';
 
 const PureChatItem = ({
   chat,

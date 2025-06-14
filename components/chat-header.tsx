@@ -9,19 +9,19 @@ import { PlusIcon } from './icons';
 import { useSidebar } from './ui/sidebar';
 import { memo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { type VisibilityType, VisibilitySelector } from './visibility-selector';
 import type { Session } from 'next-auth';
+
+// 임시 타입 정의 (visibility 기능 제거 중)
+type VisibilityType = 'private' | 'public';
 
 function PureChatHeader({
   chatId,
   selectedModelId,
-  selectedVisibilityType,
   isReadonly,
   session,
 }: {
   chatId: string;
   selectedModelId: string;
-  selectedVisibilityType: VisibilityType;
   isReadonly: boolean;
   session: Session;
 }) {
@@ -61,13 +61,7 @@ function PureChatHeader({
         />
       )}
 
-      {!isReadonly && (
-        <VisibilitySelector
-          chatId={chatId}
-          selectedVisibilityType={selectedVisibilityType}
-          className="order-1 md:order-3"
-        />
-      )}
+
     </header>
   );
 }
