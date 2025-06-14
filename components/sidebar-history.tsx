@@ -81,18 +81,21 @@ const groupChatsByDate = (chats: Chat[]): GroupedChats => {
 export function getChatHistoryPaginationKey(
   pageIndex: number,
   previousPageData: ChatHistory,
+  userId?: string,
 ) {
   if (previousPageData && previousPageData.hasMore === false) {
     return null;
   }
 
-  if (pageIndex === 0) return `${API_BASE_URL}/history?limit=${PAGE_SIZE}`;
+  if (!userId) return null;
+
+  if (pageIndex === 0) return `${API_BASE_URL}/history?user_id=${userId}&limit=${PAGE_SIZE}`;
 
   const firstChatFromPage = previousPageData.chats.at(-1);
 
   if (!firstChatFromPage) return null;
 
-  return `${API_BASE_URL}/history?ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`;
+  return `${API_BASE_URL}/history?user_id=${userId}&ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`;
 }
 
 export function SidebarHistory({ user }: { user: User | undefined }) {
@@ -105,9 +108,13 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
     isValidating,
     isLoading,
     mutate,
-  } = useSWRInfinite<ChatHistory>(getChatHistoryPaginationKey, fetcher, {
-    fallbackData: [],
-  });
+  } = useSWRInfinite<ChatHistory>(
+    (pageIndex, previousPageData) => getChatHistoryPaginationKey(pageIndex, previousPageData, user?.id),
+    fetcher,
+    {
+      fallbackData: [],
+    }
+  );
 
   const router = useRouter();
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -122,7 +129,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
     : false;
 
   const handleDelete = async () => {
-    const deletePromise = fetch(`/api/chat?id=${deleteId}`, {
+    const deletePromise = fetch(`${API_BASE_URL}/chat/${deleteId}`, {
       method: 'DELETE',
     });
 
