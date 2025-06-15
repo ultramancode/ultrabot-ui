@@ -1,8 +1,23 @@
 import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { API_BASE_URL } from '@/lib/constants';
 
-import { auth } from '@/app/(auth)/auth';
+// Verify token with backend API
+async function verifyToken(token: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/verify`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
 
 // Use Blob instead of File since File is not available in Node.js environment
 const FileSchema = z.object({
@@ -18,10 +33,18 @@ const FileSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await auth();
+  // Check for authorization header
+  const authHeader = request.headers.get('Authorization');
+  const token = authHeader?.replace('Bearer ', '');
 
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!token) {
+    return NextResponse.json({ error: 'No authorization token provided' }, { status: 401 });
+  }
+
+  // Verify token with backend
+  const isValidToken = await verifyToken(token);
+  if (!isValidToken) {
+    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
 
   if (request.body === null) {

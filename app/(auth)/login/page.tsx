@@ -2,51 +2,71 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from '@/components/toast';
 
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
-
-import { login, type LoginActionState } from '../actions';
-import { useSession } from 'next-auth/react';
+import AuthService from '@/lib/auth';
 
 export default function Page() {
   const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
-
-  const [state, formAction] = useActionState<LoginActionState, FormData>(
-    login,
-    {
-      status: 'idle',
-    },
-  );
-
-  const { update: updateSession } = useSession();
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (state.status === 'failed') {
-      toast({
-        type: 'error',
-        description: 'Invalid credentials!',
-      });
-    } else if (state.status === 'invalid_data') {
-      toast({
-        type: 'error',
-        description: 'Failed validating your submission!',
-      });
-    } else if (state.status === 'success') {
-      setIsSuccessful(true);
-      updateSession();
-      router.refresh();
+    // 이미 로그인된 사용자는 홈으로 리다이렉트
+    const user = AuthService.getUser();
+    if (user) {
+      router.push('/');
     }
-  }, [state.status]);
+  }, [router]);
 
-  const handleSubmit = (formData: FormData) => {
-    setEmail(formData.get('email') as string);
-    formAction(formData);
+  const handleSubmit = async (formData: FormData) => {
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
+    if (!email || !password) {
+      toast({
+        type: 'error',
+        description: 'Please fill in all fields!',
+      });
+      return;
+    }
+
+    setEmail(email);
+    setIsLoading(true);
+
+    try {
+      await AuthService.login(email, password);
+      setIsSuccessful(true);
+      
+      toast({
+        type: 'success',
+        description: 'Successfully signed in!',
+      });
+
+      // 잠시 기다린 후 리다이렉트 (쿠키 설정 시간 확보)
+      setTimeout(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectUrl = urlParams.get('redirectUrl');
+        
+        if (redirectUrl) {
+          window.location.href = decodeURIComponent(redirectUrl);
+        } else {
+          window.location.href = '/';
+        }
+      }, 100);
+    } catch (error) {
+      toast({
+        type: 'error',
+        description: error instanceof Error ? error.message : 'Login failed!',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -59,7 +79,9 @@ export default function Page() {
           </p>
         </div>
         <AuthForm action={handleSubmit} defaultEmail={email}>
-          <SubmitButton isSuccessful={isSuccessful}>Sign in</SubmitButton>
+          <SubmitButton isSuccessful={isSuccessful}>
+            Sign in
+          </SubmitButton>
           <p className="text-center text-sm text-gray-600 mt-4 dark:text-zinc-400">
             {"Don't have an account? "}
             <Link
@@ -70,6 +92,33 @@ export default function Page() {
             </Link>
             {' for free.'}
           </p>
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={async () => {
+                setIsLoading(true);
+                try {
+                  await AuthService.createGuest();
+                  toast({
+                    type: 'success',
+                    description: 'Guest account created!',
+                  });
+                  router.push('/');
+                } catch (error) {
+                  toast({
+                    type: 'error',
+                    description: 'Failed to create guest account',
+                  });
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              className="text-sm text-gray-600 hover:text-gray-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              disabled={isLoading}
+            >
+              Continue as Guest
+            </button>
+          </div>
         </AuthForm>
       </div>
     </div>
