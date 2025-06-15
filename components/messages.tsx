@@ -1,32 +1,36 @@
-import type { UIMessage } from 'ai';
+import type { UIMessage } from './chat';
 import { PreviewMessage, ThinkingMessage } from './message';
 import { Greeting } from './greeting';
 import { memo } from 'react';
-import type { Vote } from '@/lib/db/schema';
 import equal from 'fast-deep-equal';
-import type { UseChatHelpers } from '@ai-sdk/react';
 import { motion } from 'framer-motion';
 import { useMessages } from '@/hooks/use-messages';
+
+// Chat helpers 타입 정의
+interface UseChatHelpers {
+  status: 'ready' | 'submitted' | 'streaming' | 'error';
+  setMessages: (messages: UIMessage[]) => void;
+  reload: () => Promise<string | null | undefined>;
+}
 
 interface MessagesProps {
   chatId: string;
   status: UseChatHelpers['status'];
-  votes: Array<Vote> | undefined;
   messages: Array<UIMessage>;
   setMessages: UseChatHelpers['setMessages'];
   reload: UseChatHelpers['reload'];
   isReadonly: boolean;
-  isArtifactVisible: boolean;
+  append: (message: any) => Promise<string | null | undefined>;
 }
 
 function PureMessages({
   chatId,
   status,
-  votes,
   messages,
   setMessages,
   reload,
   isReadonly,
+  append,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -44,7 +48,7 @@ function PureMessages({
       ref={messagesContainerRef}
       className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 relative"
     >
-      {messages.length === 0 && <Greeting />}
+      {messages.length === 0 && <Greeting chatId={chatId} append={append} />}
 
       {messages.map((message, index) => (
         <PreviewMessage
@@ -52,11 +56,6 @@ function PureMessages({
           chatId={chatId}
           message={message}
           isLoading={status === 'streaming' && messages.length - 1 === index}
-          vote={
-            votes
-              ? votes.find((vote) => vote.messageId === message.id)
-              : undefined
-          }
           setMessages={setMessages}
           reload={reload}
           isReadonly={isReadonly}
@@ -81,13 +80,10 @@ function PureMessages({
 }
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
-  if (prevProps.isArtifactVisible && nextProps.isArtifactVisible) return true;
-
   if (prevProps.status !== nextProps.status) return false;
   if (prevProps.status && nextProps.status) return false;
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;
-  if (!equal(prevProps.votes, nextProps.votes)) return false;
 
   return true;
 });
