@@ -1,21 +1,20 @@
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+'use client';
 
-import { auth } from '@/app/(auth)/auth';
-import { Chat } from '@/components/chat';
-import { DataStreamHandler } from '@/components/data-stream-handler';
-import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
-import type { Attachment, UIMessage } from 'ai';
+import { useEffect, useState, use } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+import { Chat, type UIMessage } from '@/components/chat';
+import { DEFAULT_CHAT_MODEL, API_BASE_URL } from '@/lib/constants';
+import AuthService, { type User } from '@/lib/auth';
 
 // 백엔드에서 채팅 정보 가져오기
-async function getChatFromBackend(chatId: string) {
+async function getChatFromBackend(chatId: string, authHeaders: Record<string, string>) {
   try {
     const response = await fetch(`${API_BASE_URL}/chat/${chatId}/messages`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...authHeaders,
       },
     });
 
@@ -31,49 +30,82 @@ async function getChatFromBackend(chatId: string) {
   }
 }
 
-export default async function Page(props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const { id } = params;
+function convertToUIMessages(messages: Array<any>): Array<UIMessage> {
+  return messages.map((message) => ({
+    id: message.id,
+    parts: message.parts || [{ type: 'text', text: message.content || '' }],
+    role: message.role as UIMessage['role'],
+    content: message.content || '',
+    experimental_attachments: message.attachments ?? [],
+  }));
+}
 
-  const session = await auth();
+export default function Page({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const resolvedParams = use(params);
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [initialMessages, setInitialMessages] = useState<Array<UIMessage>>([]);
 
-  if (!session) {
-    redirect('/api/auth/guest');
+  useEffect(() => {
+    const checkAuthAndLoadChat = async () => {
+      const currentUser = AuthService.getUser();
+      
+      if (!currentUser) {
+        router.push('/login');
+        return;
+      }
+
+      // 토큰 유효성 검증
+      const isValid = await AuthService.verifyToken();
+      if (!isValid) {
+        AuthService.clearAuth();
+        router.push('/login');
+        return;
+      }
+
+      setUser(currentUser);
+
+      // 채팅 메시지 로드
+      const authHeaders = AuthService.getAuthHeaders();
+      const chatData = await getChatFromBackend(resolvedParams.id, authHeaders);
+      const messagesFromBackend = chatData?.messages || [];
+      const convertedMessages = convertToUIMessages(messagesFromBackend);
+      
+      setInitialMessages(convertedMessages);
+      setIsLoading(false);
+    };
+
+    checkAuthAndLoadChat();
+  }, [router, resolvedParams.id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-dvh w-screen items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-2 text-sm text-gray-600">Loading chat...</p>
+        </div>
+      </div>
+    );
   }
 
-  // 백엔드에서 채팅 메시지 가져오기 (채팅이 존재하지 않으면 빈 배열로 시작)
-  const chatData = await getChatFromBackend(id);
-  const messagesFromBackend = chatData?.messages || [];
-
-  function convertToUIMessages(messages: Array<any>): Array<UIMessage> {
-    return messages.map((message) => ({
-      id: message.id,
-      parts: message.parts as UIMessage['parts'],
-      role: message.role as UIMessage['role'],
-      content: '',
-      createdAt: new Date(message.createdAt),
-      experimental_attachments:
-        (message.attachments as Array<Attachment>) ?? [],
-    }));
+  if (!user) {
+    return null; // 리다이렉트 중
   }
 
-  const cookieStore = await cookies();
-  const chatModelFromCookie = cookieStore.get('chat-model');
-
-  const initialMessages = convertToUIMessages(messagesFromBackend);
-  const chatModel = chatModelFromCookie?.value || DEFAULT_CHAT_MODEL;
+  // URL에서 모델 선택 확인
+  const modelFromUrl = searchParams.get('model');
+  const selectedModel = modelFromUrl || DEFAULT_CHAT_MODEL;
 
   return (
-    <>
-      <Chat
-        id={id}
-        initialMessages={initialMessages}
-        initialChatModel={chatModel}
-        isReadonly={false} // Visibility 기능 제거로 현재는 붋필요. 추후 확장 가능성 있으니 남겨둠
-        session={session}
-        autoResume={true}
-      />
-      <DataStreamHandler id={id} />
-    </>
+    <Chat
+      id={resolvedParams.id}
+      initialMessages={initialMessages}
+      selectedModelId={selectedModel}
+      isReadonly={false}
+      user={user}
+    />
   );
 }
