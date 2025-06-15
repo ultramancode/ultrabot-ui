@@ -1,6 +1,12 @@
 import { motion } from 'framer-motion';
+import { ApiDescriptions } from './suggested-actions';
 
-export const Greeting = () => {
+interface GreetingProps {
+  chatId: string;
+  append: (message: any) => void;
+}
+
+export const Greeting = ({ chatId, append }: GreetingProps) => {
   return (
     <div
       key="overview"
@@ -20,9 +26,18 @@ export const Greeting = () => {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
         transition={{ delay: 0.6 }}
-        className="text-2xl text-zinc-500"
+        className="text-2xl text-zinc-500 mb-8"
       >
         How can I help you today?
+      </motion.div>
+      
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ delay: 0.7 }}
+      >
+        <ApiDescriptions chatId={chatId} append={append} />
       </motion.div>
     </div>
   );

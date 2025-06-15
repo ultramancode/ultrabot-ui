@@ -1,15 +1,22 @@
 import type { CoreAssistantMessage, CoreToolMessage, UIMessage } from 'ai';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { Document } from '@/lib/db/schema';
 import { ChatSDKError, type ErrorCode } from './errors';
+import AuthService from './auth';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export const fetcher = async (url: string) => {
-  const response = await fetch(url);
+  const authHeaders = AuthService.getAuthHeaders();
+  
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+    },
+  });
 
   if (!response.ok) {
     const { code, cause } = await response.json();
@@ -64,15 +71,7 @@ export function getMostRecentUserMessage(messages: Array<UIMessage>) {
   return userMessages.at(-1);
 }
 
-export function getDocumentTimestampByIndex(
-  documents: Array<Document>,
-  index: number,
-) {
-  if (!documents) return new Date();
-  if (index > documents.length) return new Date();
 
-  return documents[index].createdAt;
-}
 
 export function getTrailingMessageId({
   messages,
