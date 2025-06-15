@@ -1,19 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSWRConfig } from 'swr';
 import { ChatHeader } from './chat-header';
 import { generateUUID } from '@/lib/utils';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
-import { unstable_serialize } from 'swr/infinite';
-import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
-import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
-import { Attachment, Message } from 'ai';
-import { useChat } from 'ai/react';
-import { AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '@/lib/constants';
 import AuthService, { type User } from '@/lib/auth';
 
@@ -69,23 +63,7 @@ export function Chat({
   const query = searchParams.get('query');
   const [hasAppendedQuery, setHasAppendedQuery] = useState(false);
 
-  useEffect(() => {
-    if (query && !hasAppendedQuery) {
-      const queryMessage: UIMessage = {
-        id: generateUUID(),
-        role: 'user',
-        content: query,
-        parts: [{ type: 'text', text: query }],
-      };
-      
-      setMessages(prev => [...prev, queryMessage]);
-      handleSendMessage(query);
-      setHasAppendedQuery(true);
-      window.history.replaceState({}, '', `/chat/${id}`);
-    }
-  }, [query, hasAppendedQuery, id]);
-
-  const handleSendMessage = async (messageContent: string, actionResponse?: string) => {
+  const handleSendMessage = useCallback(async (messageContent: string, actionResponse?: string) => {
     if (!messageContent.trim() && !actionResponse) return;
 
     setStatus('streaming');
@@ -212,7 +190,23 @@ export function Chat({
         setStatus('ready');
       }
     }
-  };
+  }, [user, selectedModelId, id, mutate]);
+
+  useEffect(() => {
+    if (query && !hasAppendedQuery) {
+      const queryMessage: UIMessage = {
+        id: generateUUID(),
+        role: 'user',
+        content: query,
+        parts: [{ type: 'text', text: query }],
+      };
+      
+      setMessages(prev => [...prev, queryMessage]);
+      handleSendMessage(query);
+      setHasAppendedQuery(true);
+      window.history.replaceState({}, '', `/chat/${id}`);
+    }
+  }, [query, hasAppendedQuery, id]);
 
   // 버튼 클릭 핸들러
   const handleButtonClick = async (buttonValue: string) => {

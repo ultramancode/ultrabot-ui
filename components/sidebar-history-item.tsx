@@ -5,38 +5,21 @@ interface Chat {
   createdAt: Date;
   userId: string;
 }
-
-import { cn } from '@/lib/utils';
-import { motion } from 'framer-motion';
 import { MoreHorizontalIcon, TrashIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { useSWRConfig } from 'swr';
-
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarMenuButton } from '@/components/ui/sidebar';
 import { API_BASE_URL } from '@/lib/constants';
 import {
   SidebarMenuAction,
   SidebarMenuItem,
-} from './ui/sidebar';
+  SidebarMenuButton,
+} from '@/components/ui/sidebar';
 import {
   PencilEditIcon,
   CheckCircleFillIcon,
@@ -44,7 +27,6 @@ import {
 } from './icons';
 import { memo, useState, useRef, useEffect } from 'react';
 import AuthService from '@/lib/auth';
-import { getChatHistoryPaginationKey } from './sidebar-history';
 
 interface SidebarHistoryItemProps {
   chat: Chat;

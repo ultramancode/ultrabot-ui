@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import type { User } from '@/lib/auth';
 import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, } from 'framer-motion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,8 +26,6 @@ import { fetcher } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import useSWRInfinite from 'swr/infinite';
 import { LoaderIcon } from './icons';
-import { memo } from 'react';
-import useSWR, { useSWRConfig } from 'swr';
 import { API_BASE_URL } from '@/lib/constants';
 import AuthService from '@/lib/auth';
 
