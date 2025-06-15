@@ -2,10 +2,10 @@
 
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import { useParams, useRouter } from 'next/navigation';
-import type { User } from 'next-auth';
-import { useState } from 'react';
+import type { User } from '@/lib/auth';
+import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,11 +22,22 @@ import {
   SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
-import type { Chat } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import useSWRInfinite from 'swr/infinite';
 import { LoaderIcon } from './icons';
+import { memo } from 'react';
+import useSWR, { useSWRConfig } from 'swr';
+import { API_BASE_URL } from '@/lib/constants';
+import AuthService from '@/lib/auth';
+
+// Chat 타입 정의 (Python 백엔드와 호환)
+export interface Chat {
+  id: string;
+  title: string;
+  createdAt: Date;
+  userId: string;
+}
 
 type GroupedChats = {
   today: Chat[];
@@ -41,9 +52,7 @@ export interface ChatHistory {
   hasMore: boolean;
 }
 
-const PAGE_SIZE = 20;
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const PAGE_SIZE = 7;
 
 const groupChatsByDate = (chats: Chat[]): GroupedChats => {
   const now = new Date();
@@ -89,13 +98,13 @@ export function getChatHistoryPaginationKey(
 
   if (!userId) return null;
 
-  if (pageIndex === 0) return `${API_BASE_URL}/history?user_id=${userId}&limit=${PAGE_SIZE}`;
+  if (pageIndex === 0) return `${API_BASE_URL}/chat/history?userId=${userId}&limit=${PAGE_SIZE}`;
 
   const firstChatFromPage = previousPageData.chats.at(-1);
 
   if (!firstChatFromPage) return null;
 
-  return `${API_BASE_URL}/history?user_id=${userId}&ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`;
+  return `${API_BASE_URL}/chat/history?userId=${userId}&ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`;
 }
 
 export function SidebarHistory({ user }: { user: User | undefined }) {
@@ -120,6 +129,18 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
+  // 새 채팅 생성시 사이드바 새로고침을 위한 이벤트 리스너
+  useEffect(() => {
+    const handleRefreshSidebar = () => {
+      mutate();
+    };
+
+    window.addEventListener('refreshSidebar', handleRefreshSidebar);
+    return () => {
+      window.removeEventListener('refreshSidebar', handleRefreshSidebar);
+    };
+  }, [mutate]);
+
   const hasReachedEnd = paginatedChatHistories
     ? paginatedChatHistories.some((page) => page.hasMore === false)
     : false;
@@ -128,9 +149,33 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
     ? paginatedChatHistories.every((page) => page.chats.length === 0)
     : false;
 
+  // 중복 제거 및 그룹화 로직을 useMemo로 최적화
+  const groupedChats = useMemo(() => {
+    if (!paginatedChatHistories) return null;
+
+    const chatsFromHistory = paginatedChatHistories.flatMap(
+      (paginatedChatHistory) => paginatedChatHistory.chats,
+    );
+
+    // 중복 제거: ID 기준으로 유니크한 채팅만 유지 (Map 사용으로 성능 개선)
+    const chatMap = new Map<string, Chat>();
+    chatsFromHistory.forEach(chat => {
+      chatMap.set(chat.id, chat);
+    });
+    const uniqueChats = Array.from(chatMap.values());
+
+    return groupChatsByDate(uniqueChats);
+  }, [paginatedChatHistories]);
+
   const handleDelete = async () => {
+    const authHeaders = AuthService.getAuthHeaders();
+    
     const deletePromise = fetch(`${API_BASE_URL}/chat/${deleteId}`, {
       method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+      },
     });
 
     toast.promise(deletePromise, {
@@ -217,11 +262,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
           <SidebarMenu>
             {paginatedChatHistories &&
               (() => {
-                const chatsFromHistory = paginatedChatHistories.flatMap(
-                  (paginatedChatHistory) => paginatedChatHistory.chats,
-                );
-
-                const groupedChats = groupChatsByDate(chatsFromHistory);
+                if (!groupedChats) return null;
 
                 return (
                   <div className="flex flex-col gap-6">

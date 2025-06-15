@@ -1,38 +1,65 @@
-import type { Chat } from '@/lib/db/schema';
-import {
-  SidebarMenuAction,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from './ui/sidebar';
+// Chat 타입 정의 (Python 백엔드와 호환)
+interface Chat {
+  id: string;
+  title: string;
+  createdAt: Date;
+  userId: string;
+}
+
+import { cn } from '@/lib/utils';
+import { motion } from 'framer-motion';
+import { MoreHorizontalIcon, TrashIcon } from 'lucide-react';
 import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { useSWRConfig } from 'swr';
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+} from '@/components/ui/dropdown-menu';
+import { SidebarMenuButton } from '@/components/ui/sidebar';
+import { API_BASE_URL } from '@/lib/constants';
 import {
-  MoreHorizontalIcon,
-  TrashIcon,
+  SidebarMenuAction,
+  SidebarMenuItem,
+} from './ui/sidebar';
+import {
   PencilEditIcon,
   CheckCircleFillIcon,
   CrossIcon,
 } from './icons';
 import { memo, useState, useRef, useEffect } from 'react';
+import AuthService from '@/lib/auth';
+import { getChatHistoryPaginationKey } from './sidebar-history';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+interface SidebarHistoryItemProps {
+  chat: Chat;
+  isActive: boolean;
+  onDelete: (chatId: string) => void;
+  setOpenMobile: (open: boolean) => void;
+}
 
 const PureChatItem = ({
   chat,
   isActive,
   onDelete,
   setOpenMobile,
-}: {
-  chat: Chat;
-  isActive: boolean;
-  onDelete: (chatId: string) => void;
-  setOpenMobile: (open: boolean) => void;
-}) => {
+}: SidebarHistoryItemProps) => {
+  const { mutate } = useSWRConfig();
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(chat.title);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -54,10 +81,13 @@ const PureChatItem = ({
 
     setIsUpdating(true);
     try {
+      const authHeaders = AuthService.getAuthHeaders();
+      
       const response = await fetch(`${API_BASE_URL}/chat/${chat.id}/title`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify({
           title: editTitle.trim(),
@@ -65,11 +95,35 @@ const PureChatItem = ({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update title');
+        const errorText = await response.text();
+        console.error('API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+          url: response.url
+        });
+        throw new Error(`Failed to update title: ${response.status} ${response.statusText}`);
       }
 
-      // 성공 시 페이지 새로고침하여 사이드바 업데이트
-      window.location.reload();
+      // 성공 시 사이드바 히스토리 캐시 업데이트
+      const user = AuthService.getUser();
+      if (user) {
+        // 모든 관련 캐시를 무효화하고 즉시 새로고침
+        await mutate(
+          (key) => 
+            typeof key === 'string' && 
+            key.includes('/chat/history') && 
+            key.includes(`userId=${user.id}`),
+          undefined,
+          { revalidate: true }
+        );
+        
+        // 추가적으로 기본 히스토리 캐시를 강제 새로고침
+        await mutate(`${API_BASE_URL}/chat/history?userId=${user.id}&limit=7`, undefined, { revalidate: true });
+        
+        // 로컬 상태도 즉시 업데이트
+        chat.title = editTitle.trim();
+      }
     } catch (error) {
       console.error('Error updating chat title:', error);
       setEditTitle(chat.title); // 원래 제목으로 되돌리기

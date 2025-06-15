@@ -1,47 +1,69 @@
 'use client';
 
-import type { Attachment, UIMessage } from 'ai';
 import { useEffect, useState } from 'react';
 import { useSWRConfig } from 'swr';
-import { ChatHeader } from '@/components/chat-header';
+import { ChatHeader } from './chat-header';
 import { generateUUID } from '@/lib/utils';
-import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
-import { useArtifactSelector } from '@/hooks/use-artifact';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
 import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
+import { Attachment, Message } from 'ai';
+import { useChat } from 'ai/react';
+import { AnimatePresence } from 'framer-motion';
+import { API_BASE_URL } from '@/lib/constants';
+import AuthService, { type User } from '@/lib/auth';
 
-// 임시 타입 정의 (visibility 기능 제거 중)
-type VisibilityType = 'private' | 'public';
+// UI 메시지 타입 정의
+export interface UIMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  parts: Array<{
+    type: 'text';
+    text: string;
+  }>;
+  experimental_attachments?: Array<ChatAttachment>;
+}
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+// 첨부파일 타입 정의
+export interface ChatAttachment {
+  url: string;
+  name?: string;
+  contentType?: string;
+}
+
+// 버튼 메시지 타입
+interface PendingButtonMessage {
+  message: string;
+  buttons: Array<{
+    label: string;
+    value: string;
+  }>;
+}
 
 export function Chat({
   id,
   initialMessages,
-  initialChatModel,
+  selectedModelId,
+  user,
   isReadonly,
-  session,
-  autoResume,
 }: {
   id: string;
   initialMessages: Array<UIMessage>;
-  initialChatModel: string;
+  selectedModelId: string;
+  user: User;
   isReadonly: boolean;
-  session: Session;
-  autoResume: boolean;
 }) {
   const { mutate } = useSWRConfig();
   const [messages, setMessages] = useState<Array<UIMessage>>(initialMessages);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'ready' | 'submitted' | 'streaming' | 'error'>('ready');
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
-  const [pendingButtonMessage, setPendingButtonMessage] = useState<{message: string, buttons: any[]} | null>(null);
-
+  const [attachments, setAttachments] = useState<Array<ChatAttachment>>([]);
+  const [pendingButtonMessage, setPendingButtonMessage] = useState<PendingButtonMessage | null>(null);
 
   const searchParams = useSearchParams();
   const query = searchParams.get('query');
@@ -54,7 +76,6 @@ export function Chat({
         role: 'user',
         content: query,
         parts: [{ type: 'text', text: query }],
-        createdAt: new Date(),
       };
       
       setMessages(prev => [...prev, queryMessage]);
@@ -63,11 +84,6 @@ export function Chat({
       window.history.replaceState({}, '', `/chat/${id}`);
     }
   }, [query, hasAppendedQuery, id]);
-
-  // 투표 기능 비활성화 (현재는 백엔드에 vote API가 없음 -> 추가 후 활용)
-  const votes = undefined;
-
-  const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 
   const handleSendMessage = async (messageContent: string, actionResponse?: string) => {
     if (!messageContent.trim() && !actionResponse) return;
@@ -82,7 +98,6 @@ export function Chat({
         role: 'assistant',
         content: '생각 중...',
         parts: [{ type: 'text', text: '생각 중...' }],
-        createdAt: new Date(),
       };
       loadingMessageId = loadingMessage.id;
       setMessages(prev => [...prev, loadingMessage]);
@@ -92,22 +107,34 @@ export function Chat({
       const requestBody: any = { 
         message: messageContent,
         chat_id: id,
-        user_id: session?.user?.id || "guest",
-        selected_model: initialChatModel  // 선택된 모델 전달
+        user_id: user?.id || "guest",
+        selected_model: selectedModelId  // 선택된 모델 전달
       };
       if (actionResponse) {
         requestBody.action_response = actionResponse;
       }
 
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      // 인증 헤더 추가
+      const authHeaders = AuthService.getAuthHeaders();
+      
+      console.log('Chat request - Auth headers:', authHeaders);
+      console.log('Chat request - User ID:', user?.id);
+      console.log('Chat request - Request body:', requestBody);
+
+      const response = await fetch(`${API_BASE_URL}/chat/message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify(requestBody),
       });
 
+      console.log('Chat response status:', response.status);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Chat request failed:', response.status, errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -119,7 +146,6 @@ export function Chat({
         role: 'assistant',
         content: data.response || '',
         parts: [{ type: 'text', text: data.response || '' }],
-        createdAt: new Date(),
       };
 
       // 버튼이 있는 경우 상태에 저장
@@ -144,7 +170,18 @@ export function Chat({
         setMessages(prev => [...prev, assistantMessage]);
       }
       
-      mutate(unstable_serialize(getChatHistoryPaginationKey));
+      // 사이드바 히스토리 업데이트 (강제 새로고침)
+      await mutate(
+        (key) => 
+          typeof key === 'string' && 
+          key.includes('/chat/history') && 
+          key.includes(`userId=${user.id}`),
+        undefined,
+        { revalidate: true }
+      );
+      
+      // 추가적으로 사이드바 새로고침 이벤트 트리거
+      window.dispatchEvent(new CustomEvent('refreshSidebar'));
       
     } catch (error: any) {
       console.error('Error sending message:', error);
@@ -157,7 +194,6 @@ export function Chat({
           role: 'assistant',
           content: '죄송합니다. 오류가 발생했습니다.',
           parts: [{ type: 'text', text: '죄송합니다. 오류가 발생했습니다.' }],
-          createdAt: new Date(),
         };
         
         setMessages(prev => 
@@ -188,7 +224,6 @@ export function Chat({
       role: 'user',
       content: buttonValue === 'yes' ? '예' : '아니오',
       parts: [{ type: 'text', text: buttonValue === 'yes' ? '예' : '아니오' }],
-      createdAt: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -210,7 +245,6 @@ export function Chat({
       role: 'user',
       content: input,
       parts: [{ type: 'text', text: input }],
-      createdAt: new Date(),
       experimental_attachments: attachments,
     };
 
@@ -228,7 +262,6 @@ export function Chat({
       role: 'user',
       content: message.content,
       parts: [{ type: 'text', text: message.content }],
-      createdAt: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -262,21 +295,18 @@ export function Chat({
     <>
       <div className="flex flex-col min-w-0 h-dvh bg-background">
         <ChatHeader
-          chatId={id}
-          selectedModelId={initialChatModel}
-          isReadonly={isReadonly}
-          session={session}
+          selectedModelId={selectedModelId}
+          user={user}
         />
 
         <Messages
           chatId={id}
           status={status}
-          votes={votes}
           messages={messages}
           setMessages={wrappedSetMessages}
           reload={reload}
           isReadonly={isReadonly}
-          isArtifactVisible={isArtifactVisible}
+          append={append}
         />
 
         {/* 확인 버튼 렌더링, if문 마냥 pendigButtonMessage가 null 아닐 때만 렌더링 */}
@@ -319,29 +349,10 @@ export function Chat({
               messages={messages}
               setMessages={wrappedSetMessages}
               append={append}
-              selectedVisibilityType={'private' as VisibilityType}
             />
           )}
         </form>
       </div>
-
-      <Artifact
-        chatId={id}
-        input={input}
-        setInput={setInput}
-        handleSubmit={handleSubmit}
-        status={status}
-        stop={stop}
-        attachments={attachments}
-        setAttachments={setAttachments}
-        append={append}
-        messages={messages}
-        setMessages={wrappedSetMessages}
-        reload={reload}
-        votes={votes}
-        isReadonly={isReadonly}
-        selectedVisibilityType={'private' as VisibilityType}
-      />
     </>
   );
 }
