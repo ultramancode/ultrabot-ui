@@ -15,6 +15,6 @@ export async function generateTitleFromUserMessage({
 }) {
   // 간단한 제목 생성 -> 추후 llm 이용해서 요약 등 하는 방식으로 변경 고려
   const content = message.content || message.parts?.[0]?.text || 'New Chat';
-  const title = content.length > 50 ? content.substring(0, 50) + '...' : content;
+  const title = content.length > 50 ? `${content.substring(0, 50)}...` : content;
   return title;
 }
