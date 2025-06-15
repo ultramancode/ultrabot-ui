@@ -1,118 +1,123 @@
 'use client';
 
-import { startTransition, useMemo, useOptimistic, useState, useEffect } from 'react';
-
-import { saveChatModelAsCookie } from '@/app/(chat)/actions';
-import { Button } from '@/components/ui/button';
+import { Button, type ButtonProps } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { fetchAvailableModels, type ChatModel } from '@/lib/ai/models';
 import { cn } from '@/lib/utils';
+import { ChevronDownIcon } from './icons';
+import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '@/lib/constants';
+import AuthService, { type User } from '@/lib/auth';
 
-import { CheckCircleFillIcon, ChevronDownIcon } from './icons';
-import type { Session } from 'next-auth';
+interface Model {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface ModelSelectorProps extends ButtonProps {
+  user: User;
+  selectedModelId: string;
+}
 
 export function ModelSelector({
-  session,
+  user,
   selectedModelId,
   className,
-}: {
-  session: Session;
-  selectedModelId: string;
-} & React.ComponentProps<typeof Button>) {
-  const [open, setOpen] = useState(false);
-  const [optimisticModelId, setOptimisticModelId] = useOptimistic(selectedModelId);
-  const [availableModels, setAvailableModels] = useState<ChatModel[]>([]);
+  ...props
+}: ModelSelectorProps) {
+  const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 백엔드에서 모델 목록 가져오기
   useEffect(() => {
-    const loadModels = async () => {
+    const fetchModels = async () => {
       try {
-        const models = await fetchAvailableModels();
-        setAvailableModels(models);
+        const response = await fetch(`${API_BASE_URL}/chat/models`, {
+          headers: {
+            ...AuthService.getAuthHeaders(),
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setModels(data);
+        } else {
+          // 기본 모델 목록 사용
+          setModels([
+            { id: 'gemma3:4b', name: 'Gemma 3 4B', description: '빠르고 효율적인 4B 파라미터 모델' },
+            { id: 'gemma3:12b', name: 'Gemma 3 12B', description: '더 정확한 12B 파라미터 모델' },
+          ]);
+        }
       } catch (error) {
-        console.error('Failed to load models:', error);
+        console.error('Failed to fetch models:', error);
+        // 기본 모델 목록 사용
+        setModels([
+          { id: 'gemma3:4b', name: 'Gemma 3 4B', description: '빠르고 효율적인 4B 파라미터 모델' },
+          { id: 'gemma3:12b', name: 'Gemma 3 12B', description: '더 정확한 12B 파라미터 모델' },
+        ]);
       } finally {
         setLoading(false);
       }
     };
 
-    loadModels();
+    fetchModels();
   }, []);
 
-  const selectedChatModel = useMemo(
-    () => availableModels.find((model) => model.id === optimisticModelId),
-    [optimisticModelId, availableModels],
-  );
+  const selectedModel = models.find(model => model.id === selectedModelId);
 
   if (loading) {
     return (
-      <Button variant="outline" className="md:px-2 md:h-[34px]" disabled>
+      <Button
+        variant="outline"
+        className={cn('cursor-not-allowed opacity-50', className)}
+        disabled
+        {...props}
+      >
         Loading...
       </Button>
     );
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger
-        asChild
-        className={cn(
-          'w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',
-          className,
-        )}
-      >
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
-          data-testid="model-selector"
           variant="outline"
-          className="md:px-2 md:h-[34px]"
+          className={cn(
+            'md:px-2 md:h-[34px] h-fit justify-start gap-2 md:gap-2',
+            className,
+          )}
+          {...props}
         >
-          {selectedChatModel?.name || 'Select Model'}
+          <span className="text-xs font-medium md:flex">
+            {selectedModel?.name || 'Select Model'}
+          </span>
           <ChevronDownIcon />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[300px]">
-        {availableModels.map((chatModel) => {
-          const { id } = chatModel;
-
-          return (
-            <DropdownMenuItem
-              data-testid={`model-selector-item-${id}`}
-              key={id}
-              onSelect={() => {
-                setOpen(false);
-
-                startTransition(() => {
-                  setOptimisticModelId(id);
-                  saveChatModelAsCookie(id);
-                });
-              }}
-              data-active={id === optimisticModelId}
-              asChild
-            >
-              <button
-                type="button"
-                className="gap-4 group/item flex flex-row justify-between items-center w-full"
-              >
-                <div className="flex flex-col gap-1 items-start">
-                  <div>{chatModel.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {chatModel.description}
-                  </div>
-                </div>
-
-                <div className="text-foreground dark:text-foreground opacity-0 group-data-[active=true]/item:opacity-100">
-                  <CheckCircleFillIcon />
-                </div>
-              </button>
-            </DropdownMenuItem>
-          );
-        })}
+        {models.map((model) => (
+          <DropdownMenuItem
+            key={model.id}
+            onSelect={() => {
+              // 모델 선택 로직은 부모 컴포넌트에서 처리
+              window.location.href = `/?model=${model.id}`;
+            }}
+            className="gap-4 group/item flex flex-col items-start"
+          >
+            <div className="flex flex-col gap-1 items-start">
+              <div className="font-medium">{model.name}</div>
+              <div className="text-muted-foreground text-sm">
+                {model.description}
+              </div>
+            </div>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

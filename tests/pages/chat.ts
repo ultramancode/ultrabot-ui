@@ -1,7 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { chatModels } from '@/lib/ai/models';
 import { expect, type Page } from '@playwright/test';
+
+// 기본 모델 목록
+const chatModels = [
+    {
+      id: 'gemma3:4b',
+      name: 'Gemma 3 4B',
+      description: 'Most balanced Gemma 3 model'
+    },
+    {
+      id: 'gemma3:12b',
+      name: 'Gemmm 3 12b',
+      description: 'More powerful Gemma 3 model'
+    },
+];
 
 export class ChatPage {
   constructor(private page: Page) {}
@@ -62,9 +75,9 @@ export class ChatPage {
     );
   }
 
-  async sendUserMessageFromSuggestion() {
+  async sendUserMessageFromApiDescription() {
     await this.page
-      .getByRole('button', { name: 'What are the advantages of' })
+      .getByRole('button', { name: /📝 텍스트 생성/ })
       .click();
   }
 
@@ -202,12 +215,9 @@ export class ChatPage {
       content,
       attachments,
       async edit(newMessage: string) {
-        await page.getByTestId('message-edit-button').click();
-        await page.getByTestId('message-editor').fill(newMessage);
-        await page.getByTestId('message-editor-send-button').click();
-        await expect(
-          page.getByTestId('message-editor-send-button'),
-        ).not.toBeVisible();
+        await lastMessageElement.getByTestId('edit-message').click();
+        await page.getByTestId('multimodal-input').fill(newMessage);
+        await page.getByTestId('send-button').click();
       },
     };
   }
@@ -217,25 +227,19 @@ export class ChatPage {
   }
 
   async openSideBar() {
-    const sidebarToggleButton = this.page.getByTestId('sidebar-toggle-button');
-    await sidebarToggleButton.click();
+    await this.page.getByTestId('sidebar-trigger').click();
   }
 
   public async isScrolledToBottom(): Promise<boolean> {
-    return this.scrollContainer.evaluate(
-      (el) => Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 1,
-    );
+    return await this.scrollContainer.evaluate((el) => {
+      return el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    });
   }
 
   public async waitForScrollToBottom(timeout = 5_000): Promise<void> {
-    const start = Date.now();
-
-    while (Date.now() - start < timeout) {
-      if (await this.isScrolledToBottom()) return;
-      await this.page.waitForTimeout(100);
-    }
-
-    throw new Error(`Timed out waiting for scroll bottom after ${timeout}ms`);
+    await expect(async () => {
+      expect(await this.isScrolledToBottom()).toBe(true);
+    }).toPass({ timeout });
   }
 
   public async sendMultipleMessages(
@@ -249,8 +253,8 @@ export class ChatPage {
   }
 
   public async scrollToTop(): Promise<void> {
-    await this.scrollContainer.evaluate((element) => {
-      element.scrollTop = 0;
+    await this.scrollContainer.evaluate((el) => {
+      el.scrollTop = 0;
     });
   }
 }
