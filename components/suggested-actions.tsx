@@ -3,86 +3,84 @@
 import { motion } from 'framer-motion';
 import { Button } from './ui/button';
 import { memo } from 'react';
-import type { UseChatHelpers } from '@ai-sdk/react';
-import type { VisibilityType } from './visibility-selector';
 
-interface SuggestedActionsProps {
-  chatId: string;
-  append: UseChatHelpers['append'];
-  selectedVisibilityType: VisibilityType;
+// UseChatHelpers 타입 정의
+interface UseChatHelpers {
+  append: (message: any) => void;
 }
 
-function PureSuggestedActions({
+interface ApiDescriptionsProps {
+  chatId: string;
+  append: UseChatHelpers['append'];
+}
+
+function PureApiDescriptions({
   chatId,
   append,
-  selectedVisibilityType,
-}: SuggestedActionsProps) {
-  const suggestedActions = [
+}: ApiDescriptionsProps) {
+  const apiCapabilities = [
     {
-      title: 'What are the advantages',
-      label: 'of using Next.js?',
-      action: 'What are the advantages of using Next.js?',
+      title: '📝 텍스트 생성',
+      description: '다양한 주제의 글쓰기와 텍스트 생성',
+      example: '블로그 포스트 작성해줘',
     },
     {
-      title: 'Write code to',
-      label: `demonstrate djikstra's algorithm`,
-      action: `Write code to demonstrate djikstra's algorithm`,
+      title: '💻 코드 작성',
+      description: '프로그래밍 코드 작성 및 디버깅',
+      example: 'Python으로 웹 크롤러 만들어줘',
     },
     {
-      title: 'Help me write an essay',
-      label: `about silicon valley`,
-      action: `Help me write an essay about silicon valley`,
+      title: '🔍 데이터 분석',
+      description: '데이터 분석 및 시각화 도움',
+      example: '이 데이터를 분석해서 인사이트 찾아줘',
     },
     {
-      title: 'What is the weather',
-      label: 'in San Francisco?',
-      action: 'What is the weather in San Francisco?',
+      title: '🎯 문제 해결',
+      description: '복잡한 문제의 해결책 제시',
+      example: '이 오류를 어떻게 해결할 수 있을까?',
     },
   ];
 
   return (
-    <div
-      data-testid="suggested-actions"
-      className="grid sm:grid-cols-2 gap-2 w-full"
+    <motion.div
+      className="grid auto-rows-fr grid-cols-2 gap-3 w-full"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
     >
-      {suggestedActions.map((suggestedAction, index) => (
+      {apiCapabilities.map((capability, index) => (
         <motion.div
+          key={capability.title}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 20 }}
-          transition={{ delay: 0.05 * index }}
-          key={`suggested-action-${suggestedAction.title}-${index}`}
-          className={index > 1 ? 'hidden sm:block' : 'block'}
+          transition={{ delay: 0.05 * index, duration: 0.25 }}
         >
           <Button
             variant="ghost"
             onClick={async () => {
-              window.history.replaceState({}, '', `/chat/${chatId}`);
-
               append({
                 role: 'user',
-                content: suggestedAction.action,
+                content: capability.example,
               });
             }}
             className="text-left border rounded-xl px-4 py-3.5 text-sm flex-1 gap-1 sm:flex-col w-full h-auto justify-start items-start"
           >
-            <span className="font-medium">{suggestedAction.title}</span>
+            <span className="font-medium">{capability.title}</span>
             <span className="text-muted-foreground">
-              {suggestedAction.label}
+              {capability.description}
             </span>
           </Button>
         </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }
 
-export const SuggestedActions = memo(
-  PureSuggestedActions,
+export const ApiDescriptions = memo(
+  PureApiDescriptions,
   (prevProps, nextProps) => {
     if (prevProps.chatId !== nextProps.chatId) return false;
-    if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType)
-      return false;
 
     return true;
   },

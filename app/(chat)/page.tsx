@@ -70,7 +70,7 @@ export default function Page() {
     return (
       <div className="flex h-dvh w-screen items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+          <div className="animate-spin rounded-full size-8 border-b-2 border-gray-900 mx-auto" />
           <p className="mt-2 text-sm text-gray-600">Loading...</p>
         </div>
       </div>
